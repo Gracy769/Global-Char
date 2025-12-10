@@ -5,18 +5,77 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Global Chat - Clash Style</title>
     <style>
-        body { font-family: 'Arial', sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #2c3e50; color: #ecf0f1; margin: 0; padding: 20px; }
-        #chat-container { background: #34495e; border: 3px solid #f39c12; border-radius: 8px; width: 90%; max-width: 500px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5); padding: 10px; }
-        #chat-window { width: 100%; height: 400px; overflow-y: scroll; padding: 5px; margin-bottom: 10px; background-color: #293a4a; border: 1px solid #7f8c8d; border-radius: 4px; }
-        #message-input-area { display: flex; gap: 5px; }
-        #message-input { flex-grow: 1; padding: 10px; border: 1px solid #7f8c8d; border-radius: 4px; background-color: #ecf0f1; color: #2c3e50; }
-        #send-button { padding: 10px 15px; background-color: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        #send-button:disabled { background-color: #95a5a6; cursor: not-allowed; }
-        .message-line { margin-bottom: 5px; line-height: 1.4; word-wrap: break-word; }
-        .username { font-weight: bold; color: #e74c3c; margin-right: 5px; }
-        .timestamp { font-size: 0.7em; color: #95a5a6; margin-right: 5px; }
+        /* CSS for a CoC-like feel */
+        body { 
+            font-family: 'Arial', sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            background-color: #2c3e50; 
+            color: #ecf0f1; 
+            margin: 0;
+            padding: 20px;
+        }
+        #chat-container {
+            background: #34495e;
+            border: 3px solid #f39c12; 
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+            padding: 10px;
+        }
+        #chat-window { 
+            width: 100%; 
+            height: 400px; 
+            overflow-y: scroll; 
+            padding: 5px; 
+            margin-bottom: 10px; 
+            background-color: #293a4a;
+            border: 1px solid #7f8c8d;
+            border-radius: 4px;
+        }
+        #message-input-area { 
+            display: flex; 
+            gap: 5px;
+        }
+        #message-input { 
+            flex-grow: 1; 
+            padding: 10px; 
+            border: 1px solid #7f8c8d; 
+            border-radius: 4px;
+            background-color: #ecf0f1;
+            color: #2c3e50;
+        }
+        #send-button { 
+            padding: 10px 15px; 
+            background-color: #2ecc71; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #send-button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .message-line { 
+            margin-bottom: 5px; 
+            line-height: 1.4; 
+            word-wrap: break-word;
+        }
+        .username { 
+            font-weight: bold; 
+            color: #e74c3c; 
+            margin-right: 5px;
+        }
+        .timestamp { 
+            font-size: 0.7em; 
+            color: #95a5a6; 
+            margin-right: 5px;
+        }
     </style>
-    
 </head>
 <body>
     <h1>🌍 Global Chat</h1>
@@ -30,23 +89,24 @@
 
     <script>
         // **********************************************************************************
-        // *** YOU MUST REPLACE THE URL BELOW WITH THE ACTUAL ADDRESS OF YOUR DEPLOYED SERVER ***
-        // *** Example: wss://my-chat-app-1234.herokuapp.com                                ***
+        // !!! URGENT: YOU MUST REPLACE THIS PLACEHOLDER WITH YOUR DEPLOYED SERVER'S DOMAIN !!!
+        // !!! EXAMPLE: "my-chat-app-1234.herokuapp.com" OR "chat.mydomain.com"             !!!
         // **********************************************************************************
-        const DEPLOYED_SERVER_ADDRESS = "localhost:8765"; // <--- CHANGE THIS FOR LIVE DEPLOYMENT!
+        const DEPLOYED_SERVER_ADDRESS = "YOUR-PYTHON-SERVER-DOMAIN.com"; 
         
-        // This logic ensures the correct protocol (ws for local, wss for deployed HTTPS) is used.
+        // This ensures the client uses wss:// if your GitHub Pages site uses HTTPS.
         const SERVER_URL = DEPLOYED_SERVER_ADDRESS.startsWith('ws') || DEPLOYED_SERVER_ADDRESS.startsWith('wss')
             ? DEPLOYED_SERVER_ADDRESS
             : (window.location.protocol === "https:" ? "wss://" : "ws://") + DEPLOYED_SERVER_ADDRESS;
 
-        // --- DOM and Utility Functions (Same as previous, omitted for brevity) ---
         const chatWindow = document.getElementById('chat-window');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
 
         let ws = null;
         let username = null;
+        let reconnectionAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
 
         function formatTime(timestamp) {
             const date = new Date(timestamp * 1000);
@@ -59,7 +119,6 @@
 
             const timeSpan = `<span class="timestamp">[${formatTime(timestamp)}]</span>`;
             const userSpan = `<span class="username">${user}</span>:`;
-            
             const textContent = document.createTextNode(` ${text}`);
 
             messageDiv.innerHTML = `${timeSpan} ${userSpan}`;
@@ -68,26 +127,32 @@
             chatWindow.appendChild(messageDiv);
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
-
-        function sendMessage() {
-            const text = messageInput.value.trim();
-            if (ws && ws.readyState === WebSocket.OPEN && text) {
-                const message = {
-                    user: username,
-                    text: text
-                };
-                ws.send(JSON.stringify(message));
-                messageInput.value = '';
+        
+        function tryReconnect() {
+            if (reconnectionAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectionAttempts++;
+                const delay = 1000 * reconnectionAttempts; 
+                appendMessage("SERVER", `Attempting to reconnect (Attempt ${reconnectionAttempts}/${MAX_RECONNECT_ATTEMPTS})...`, Date.now() / 1000);
+                setTimeout(setupWebSocket, delay);
+            } else {
+                appendMessage("SERVER", "Failed to reconnect after multiple attempts. Please check server status or refresh.", Date.now() / 1000);
             }
         }
 
         function setupWebSocket() {
-            // Get username
-            while (!username || username.length < 3) {
-                username = prompt("Enter your player name (min 3 characters):").trim();
+            if (!username) {
+                while (!username || username.length < 3) {
+                    username = prompt("Enter your player name (min 3 characters):").trim();
+                }
             }
             
-            // Connect
+            // Check if the placeholder is still present
+            if (SERVER_URL.includes("YOUR-PYTHON-SERVER-DOMAIN.com")) {
+                alert("ERROR: Please update the 'DEPLOYED_SERVER_ADDRESS' in the HTML source code with your actual server URL!");
+                appendMessage("SERVER", "Configuration Error: Please update the server URL in the code.", Date.now() / 1000);
+                return;
+            }
+
             ws = new WebSocket(SERVER_URL);
 
             ws.onopen = () => {
@@ -95,6 +160,7 @@
                 messageInput.disabled = false;
                 sendButton.disabled = false;
                 messageInput.focus();
+                reconnectionAttempts = 0; 
             };
 
             ws.onmessage = (event) => {
@@ -108,17 +174,17 @@
                 }
             };
 
-            ws.onclose = () => {
-                appendMessage("SERVER", "Connection closed. Check the server status or refresh to retry.", Date.now() / 1000);
+            ws.onclose = (event) => {
+                const closeReason = event.wasClean ? "gracefully" : "unexpectedly";
+                appendMessage("SERVER", `Connection closed ${closeReason}.`, Date.now() / 1000);
+                
                 messageInput.disabled = true;
                 sendButton.disabled = true;
-                // Attempt to reconnect after 5 seconds if closed (for robustness)
-                setTimeout(setupWebSocket, 5000);
+                tryReconnect(); 
             };
 
             ws.onerror = (error) => {
                 console.error("WebSocket Error:", error);
-                // The onclose handler will also be called, which handles the retry
             };
 
             messageInput.addEventListener('keypress', function (e) {
